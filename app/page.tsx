@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { getSeedData } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 
-export default function HomePage() {
-  const { tickets, scans, syncLogs, v2Status, assumptions } = getSeedData();
+export default async function HomePage() {
+  const store = await getStore();
+  const { tickets, scans, syncLogs, v2Status, assumptions } = await store.getSeedData();
   const pendingCount = tickets.filter((ticket) =>
     ["pending", "level1_reviewing", "level2_reviewing"].includes(ticket.status),
   ).length;

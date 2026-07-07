@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getTicket, rejectTicket } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import { fail, ok } from "@/lib/response";
 import { requireRole, requireSession } from "@/lib/server-auth";
 
@@ -14,6 +14,7 @@ interface RouteProps {
 }
 
 export async function POST(request: Request, { params }: RouteProps) {
+  const store = await getStore();
   const session = await requireSession();
   if (!session.user) {
     return session.response;
@@ -25,7 +26,7 @@ export async function POST(request: Request, { params }: RouteProps) {
   }
 
   const { id } = await params;
-  const ticket = getTicket(id);
+  const ticket = await store.getTicket(id);
   if (!ticket) {
     return fail(404, "not_found", "Ticket not found.");
   }
@@ -46,7 +47,7 @@ export async function POST(request: Request, { params }: RouteProps) {
     return fail(403, "forbidden", "Level 2 approval permission required.");
   }
 
-  const result = rejectTicket(
+  const result = await store.rejectTicket(
     id,
     session.user,
     parsed.data.comment,
@@ -57,5 +58,5 @@ export async function POST(request: Request, { params }: RouteProps) {
     return fail(result.code === "version_conflict" ? 409 : 409, result.code ?? "reject_failed", result.message ?? "Reject failed.");
   }
 
-  return ok({ ticket: getTicket(id) });
+  return ok({ ticket: await store.getTicket(id) });
 }

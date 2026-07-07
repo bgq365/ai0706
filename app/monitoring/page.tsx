@@ -1,9 +1,9 @@
 import { formatDateTime } from "@/lib/format";
-import { getV2Status, listSyncLogs } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 
-export default function MonitoringPage() {
-  const status = getV2Status();
-  const logs = listSyncLogs();
+export default async function MonitoringPage() {
+  const store = await getStore();
+  const [status, logs] = await Promise.all([store.getV2Status(), store.listSyncLogs()]);
 
   return (
     <main className="grid">

@@ -1,7 +1,8 @@
-import { getConfigAssumptions } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 
-export default function ConfigPage() {
-  const assumptions = getConfigAssumptions();
+export default async function ConfigPage() {
+  const store = await getStore();
+  const assumptions = await store.getConfigAssumptions();
 
   return (
     <main className="card">

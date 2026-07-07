@@ -52,6 +52,7 @@ export default async function RootLayout({
               <Link href="/scans">扫描录入</Link>
               <Link href="/monitoring">V2 监控</Link>
               <Link href="/config">规则假设</Link>
+              <Link href="/operations">运维面板</Link>
             </nav>
           </header>
           {children}

@@ -1,4 +1,4 @@
-import { getTicket, listApprovals } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import { fail, ok } from "@/lib/response";
 
 interface RouteProps {
@@ -6,8 +6,9 @@ interface RouteProps {
 }
 
 export async function GET(_: Request, { params }: RouteProps) {
+  const store = await getStore();
   const { id } = await params;
-  const ticket = getTicket(id);
+  const ticket = await store.getTicket(id);
 
   if (!ticket) {
     return fail(404, "not_found", "Ticket not found.");
@@ -15,6 +16,6 @@ export async function GET(_: Request, { params }: RouteProps) {
 
   return ok({
     ticket,
-    approvals: listApprovals(id),
+    approvals: await store.listApprovals(id),
   });
 }

@@ -26,6 +26,7 @@ export interface SessionUser {
   email: string;
   warehouseId: string;
   roles: UserRole[];
+  isActive?: boolean;
 }
 
 export interface TicketRecord {
@@ -50,13 +51,17 @@ export interface TicketRecord {
   version: number;
   executionStatus: "not_started" | "completed";
   closedAt?: string | null;
+  assignedApproverId: string | null;
+  assignedApproverName: string | null;
+  dueAt: string | null;
+  timeoutEscalationCount: number;
 }
 
 export interface ApprovalRecord {
   id: string;
   ticketId: string;
   level: 1 | 2;
-  action: "submit" | "approve" | "reject";
+  action: "submit" | "approve" | "reject" | "reassign" | "timeout_escalate" | "fast_release";
   actorId: string;
   actorName: string;
   comment: string;
@@ -103,6 +108,11 @@ export interface ActionResult {
   ok: boolean;
   code?: string;
   message?: string;
+}
+
+export interface TimeoutProcessResult {
+  escalatedToLevel2: string[];
+  autoClosed: string[];
 }
 
 export interface SyncLog {

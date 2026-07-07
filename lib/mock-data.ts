@@ -22,6 +22,7 @@ export const demoUsers: DemoUser[] = [
     email: "reporter@v3.demo",
     warehouseId: "wh-sh-01",
     roles: ["reporter"],
+    isActive: true,
     password: "demo123456",
   },
   {
@@ -30,6 +31,7 @@ export const demoUsers: DemoUser[] = [
     email: "l1@v3.demo",
     warehouseId: "wh-sh-01",
     roles: ["level1_approver"],
+    isActive: true,
     password: "demo123456",
   },
   {
@@ -38,6 +40,7 @@ export const demoUsers: DemoUser[] = [
     email: "l2@v3.demo",
     warehouseId: "wh-sh-01",
     roles: ["level2_approver", "qc_supervisor"],
+    isActive: true,
     password: "demo123456",
   },
   {
@@ -46,6 +49,7 @@ export const demoUsers: DemoUser[] = [
     email: "admin@v3.demo",
     warehouseId: "wh-sh-01",
     roles: ["admin", "reporter", "level1_approver", "level2_approver", "qc_supervisor"],
+    isActive: true,
     password: "demo123456",
   },
 ];
@@ -106,6 +110,10 @@ export const initialTickets: TicketRecord[] = [
     version: 3,
     executionStatus: "not_started",
     closedAt: null,
+    assignedApproverId: "user-l2-01",
+    assignedApproverName: "王倩",
+    dueAt: new Date(now.getTime() + 1000 * 60 * 60 * 4).toISOString(),
+    timeoutEscalationCount: 1,
   },
   {
     id: "ticket-002",
@@ -129,6 +137,10 @@ export const initialTickets: TicketRecord[] = [
     version: 2,
     executionStatus: "not_started",
     closedAt: null,
+    assignedApproverId: "user-l1-01",
+    assignedApproverName: "李瑞",
+    dueAt: new Date(now.getTime() + 1000 * 60 * 60 * 2).toISOString(),
+    timeoutEscalationCount: 0,
   },
   {
     id: "ticket-003",
@@ -152,6 +164,10 @@ export const initialTickets: TicketRecord[] = [
     version: 4,
     executionStatus: "completed",
     closedAt: null,
+    assignedApproverId: null,
+    assignedApproverName: null,
+    dueAt: null,
+    timeoutEscalationCount: 0,
   },
 ];
 

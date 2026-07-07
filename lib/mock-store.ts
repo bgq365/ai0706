@@ -9,6 +9,7 @@ import {
   v2Status,
   waybillSnapshots,
 } from "@/lib/mock-data";
+import { requiresLevel2Approval, workflowConfig } from "@/lib/store-config";
 import type {
   ApprovalRecord,
   ActionResult,
@@ -20,6 +21,7 @@ import type {
   SyncLog,
   TicketRecord,
   TicketStatus,
+  TimeoutProcessResult,
   V2StatusSnapshot,
   WaybillSnapshot,
 } from "@/lib/types";
@@ -37,16 +39,18 @@ declare global {
     | undefined;
 }
 
-const store =
-  globalThis.__v3MockStore ??
-  (globalThis.__v3MockStore = {
+function createInitialStore() {
+  return {
     tickets: [...initialTickets],
     approvals: [...initialApprovals],
     scans: [...initialScans],
     syncLogs: [...initialSyncLogs],
     compensations: [],
     inventoryEvents: [],
-  });
+  };
+}
+
+const store = globalThis.__v3MockStore ?? (globalThis.__v3MockStore = createInitialStore());
 
 export function listDemoUsers() {
   return demoUsers;
@@ -54,6 +58,10 @@ export function listDemoUsers() {
 
 export function findDemoUserByEmail(email: string) {
   return demoUsers.find((user) => user.email === email);
+}
+
+export function findDemoUserById(userId: string) {
+  return demoUsers.find((user) => user.id === userId) ?? null;
 }
 
 export function listTickets() {
@@ -96,12 +104,49 @@ export function findWaybill(waybillNo: string) {
   return waybillSnapshots.find((waybill) => waybill.waybillNo === waybillNo) ?? null;
 }
 
+export function upsertWaybillSnapshot(snapshot: WaybillSnapshot) {
+  const existingIndex = waybillSnapshots.findIndex((waybill) => waybill.waybillNo === snapshot.waybillNo);
+  if (existingIndex >= 0) {
+    waybillSnapshots.splice(existingIndex, 1, snapshot);
+    return snapshot;
+  }
+
+  waybillSnapshots.unshift(snapshot);
+  return snapshot;
+}
+
 export function getV2Status() {
   return v2Status;
 }
 
 export function getConfigAssumptions() {
   return configAssumptions;
+}
+
+function addHours(base: Date, hours: number) {
+  return new Date(base.getTime() + hours * 60 * 60 * 1000).toISOString();
+}
+
+function findAssignableApprover(
+  warehouseId: string,
+  level: 1 | 2,
+): { id: string; name: string } | null {
+  const role = level === 1 ? "level1_approver" : "level2_approver";
+  const user =
+    demoUsers.find(
+      (candidate) =>
+        candidate.isActive !== false &&
+        candidate.warehouseId === warehouseId &&
+        candidate.roles.includes(role),
+    ) ??
+    demoUsers.find(
+      (candidate) =>
+        candidate.isActive !== false &&
+        candidate.roles.includes("admin") &&
+        candidate.warehouseId === warehouseId,
+    );
+
+  return user ? { id: user.id, name: user.name } : null;
 }
 
 export function createTicket(input: {
@@ -155,6 +200,10 @@ export function createTicket(input: {
     version: 1,
     executionStatus: "not_started",
     closedAt: null,
+    assignedApproverId: null,
+    assignedApproverName: null,
+    dueAt: null,
+    timeoutEscalationCount: 0,
   };
 
   store.tickets.unshift(ticket);
@@ -175,6 +224,10 @@ export function submitTicket(ticketId: string, actor: SessionUser, comment: stri
   ticket.currentApproverLevel = 1;
   ticket.updatedAt = new Date().toISOString();
   ticket.version += 1;
+  const assignee = findAssignableApprover(ticket.warehouseId, 1);
+  ticket.assignedApproverId = assignee?.id ?? null;
+  ticket.assignedApproverName = assignee?.name ?? null;
+  ticket.dueAt = addHours(new Date(), workflowConfig.level1ApprovalTimeoutHours);
   store.approvals.unshift({
     id: randomUUID(),
     ticketId,
@@ -227,6 +280,15 @@ function createExecutionSideEffects(ticket: TicketRecord, approvalRecordId: stri
   ticket.executionStatus = "completed";
 }
 
+function closeTicket(ticket: TicketRecord) {
+  ticket.status = "completed";
+  ticket.closedAt = new Date().toISOString();
+  ticket.currentApproverLevel = null;
+  ticket.assignedApproverId = null;
+  ticket.assignedApproverName = null;
+  ticket.dueAt = null;
+}
+
 function findApprovalByToken(ticketId: string, requestToken?: string) {
   if (!requestToken) {
     return null;
@@ -270,17 +332,25 @@ export function approveTicket(
   }
 
   const currentLevel = ticket.currentApproverLevel ?? 1;
-  const threshold = 1000;
-
-  if (currentLevel === 1 && ticket.amount >= threshold) {
+  if (currentLevel === 1 && requiresLevel2Approval(ticket.amount)) {
     ticket.status = "level2_reviewing";
     ticket.currentApproverLevel = 2;
+    const assignee = findAssignableApprover(ticket.warehouseId, 2);
+    ticket.assignedApproverId = assignee?.id ?? null;
+    ticket.assignedApproverName = assignee?.name ?? null;
+    ticket.dueAt = addHours(new Date(), workflowConfig.level2ApprovalTimeoutHours);
   } else if (currentLevel === 1) {
     ticket.status = "executing";
     ticket.currentApproverLevel = null;
+    ticket.assignedApproverId = null;
+    ticket.assignedApproverName = null;
+    ticket.dueAt = null;
   } else {
     ticket.status = "executing";
     ticket.currentApproverLevel = null;
+    ticket.assignedApproverId = null;
+    ticket.assignedApproverName = null;
+    ticket.dueAt = null;
   }
 
   ticket.updatedAt = new Date().toISOString();
@@ -301,8 +371,7 @@ export function approveTicket(
 
   if (ticket.status === "executing") {
     createExecutionSideEffects(ticket, approvalRecord.id);
-    ticket.status = "completed";
-    ticket.closedAt = new Date().toISOString();
+    closeTicket(ticket);
     ticket.version += 1;
   }
 
@@ -347,11 +416,14 @@ export function rejectTicket(
   const currentLevel = ticket.currentApproverLevel ?? 1;
   ticket.status = "pending";
   ticket.currentApproverLevel = null;
+  ticket.assignedApproverId = null;
+  ticket.assignedApproverName = null;
+  ticket.dueAt = null;
   ticket.retryCount += 1;
   ticket.updatedAt = new Date().toISOString();
   ticket.version += 1;
 
-  if (ticket.retryCount > 2) {
+  if (ticket.retryCount > workflowConfig.maxResubmitCount) {
     ticket.status = "closed";
     ticket.closedAt = new Date().toISOString();
   }
@@ -369,6 +441,175 @@ export function rejectTicket(
   });
 
   return { ok: true };
+}
+
+export function fastReleaseQcTicket(
+  ticketId: string,
+  actor: SessionUser,
+  comment: string,
+  expectedVersion?: number,
+  requestToken?: string,
+) {
+  const ticket = getTicket(ticketId);
+  if (!ticket) {
+    return { ok: false, code: "not_found", message: "Ticket not found." } satisfies ActionResult;
+  }
+
+  if (ticket.category !== "quality_control") {
+    return { ok: false, code: "invalid_category", message: "Only QC tickets support fast release." } satisfies ActionResult;
+  }
+
+  if (requestToken) {
+    const existingApproval = findApprovalByToken(ticketId, requestToken);
+    if (existingApproval) {
+      return { ok: true };
+    }
+  }
+
+  if (expectedVersion !== undefined && ticket.version !== expectedVersion) {
+    return {
+      ok: false,
+      code: "version_conflict",
+      message: "This ticket has already been updated by someone else. Please refresh.",
+    } satisfies ActionResult;
+  }
+
+  if (["completed", "closed"].includes(ticket.status)) {
+    return { ok: false, code: "invalid_state", message: "Ticket is already closed." } satisfies ActionResult;
+  }
+
+  ticket.updatedAt = new Date().toISOString();
+  ticket.version += 1;
+  const approvalRecord: ApprovalRecord = {
+    id: randomUUID(),
+    ticketId,
+    level: ticket.currentApproverLevel ?? 2,
+    action: "fast_release",
+    actorId: actor.id,
+    actorName: actor.name,
+    comment,
+    createdAt: new Date().toISOString(),
+    requestToken: requestToken ?? null,
+  };
+  store.approvals.unshift(approvalRecord);
+  createExecutionSideEffects(ticket, approvalRecord.id);
+  closeTicket(ticket);
+  ticket.version += 1;
+
+  return { ok: true };
+}
+
+export function processApprovalTimeouts(now = new Date()): TimeoutProcessResult {
+  const result: TimeoutProcessResult = {
+    escalatedToLevel2: [],
+    autoClosed: [],
+  };
+
+  store.tickets.forEach((ticket) => {
+    if (!ticket.dueAt || !["level1_reviewing", "level2_reviewing"].includes(ticket.status)) {
+      return;
+    }
+
+    if (new Date(ticket.dueAt).getTime() > now.getTime()) {
+      return;
+    }
+
+    if (ticket.currentApproverLevel === 1) {
+      ticket.status = "level2_reviewing";
+      ticket.currentApproverLevel = 2;
+      ticket.timeoutEscalationCount += 1;
+      ticket.updatedAt = now.toISOString();
+      ticket.version += 1;
+      const assignee = findAssignableApprover(ticket.warehouseId, 2);
+      ticket.assignedApproverId = assignee?.id ?? null;
+      ticket.assignedApproverName = assignee?.name ?? null;
+      ticket.dueAt = addHours(now, workflowConfig.level2ApprovalTimeoutHours);
+      store.approvals.unshift({
+        id: randomUUID(),
+        ticketId: ticket.id,
+        level: 1,
+        action: "timeout_escalate",
+        actorId: "system-timeout",
+        actorName: "System Timeout",
+        comment: "一级审批超时，自动升级到二级审批。",
+        createdAt: now.toISOString(),
+        requestToken: null,
+      });
+      result.escalatedToLevel2.push(ticket.id);
+      return;
+    }
+
+    ticket.timeoutEscalationCount += 1;
+    ticket.updatedAt = now.toISOString();
+    ticket.version += 1;
+    ticket.status = "closed";
+    ticket.closedAt = now.toISOString();
+    ticket.currentApproverLevel = null;
+    ticket.assignedApproverId = null;
+    ticket.assignedApproverName = null;
+    ticket.dueAt = null;
+    store.approvals.unshift({
+      id: randomUUID(),
+      ticketId: ticket.id,
+      level: 2,
+      action: "timeout_escalate",
+      actorId: "system-timeout",
+      actorName: "System Timeout",
+      comment: "二级审批超时，系统自动关闭工单并等待人工复核。",
+      createdAt: now.toISOString(),
+      requestToken: null,
+    });
+    result.autoClosed.push(ticket.id);
+  });
+
+  return result;
+}
+
+export function disableDemoUser(userId: string) {
+  const user = findDemoUserById(userId);
+  if (!user) {
+    return null;
+  }
+  user.isActive = false;
+  return user;
+}
+
+export function reassignDisabledApproverTickets(
+  disabledUserId: string,
+  fallbackApproverId: string,
+  actor: SessionUser,
+  comment: string,
+) {
+  const fallback = findDemoUserById(fallbackApproverId);
+  if (!fallback || fallback.isActive === false) {
+    return { ok: false, code: "invalid_fallback", message: "Fallback approver is not active." } satisfies ActionResult;
+  }
+
+  store.tickets
+    .filter(
+      (ticket) =>
+        ticket.assignedApproverId === disabledUserId &&
+        ["level1_reviewing", "level2_reviewing"].includes(ticket.status),
+    )
+    .forEach((ticket) => {
+      ticket.assignedApproverId = fallback.id;
+      ticket.assignedApproverName = fallback.name;
+      ticket.updatedAt = new Date().toISOString();
+      ticket.version += 1;
+      store.approvals.unshift({
+        id: randomUUID(),
+        ticketId: ticket.id,
+        level: ticket.currentApproverLevel ?? 1,
+        action: "reassign",
+        actorId: actor.id,
+        actorName: actor.name,
+        comment,
+        createdAt: new Date().toISOString(),
+        requestToken: null,
+      });
+    });
+
+  return { ok: true } satisfies ActionResult;
 }
 
 export function createScan(input: {
@@ -437,14 +678,14 @@ export function findOpenQcTicketByWaybill(waybillNo: string) {
 }
 
 export function resetMockStore() {
-  globalThis.__v3MockStore = {
-    tickets: [...initialTickets.map((ticket) => ({ ...ticket }))],
-    approvals: [...initialApprovals.map((approval) => ({ ...approval }))],
-    scans: [...initialScans.map((scan) => ({ ...scan }))],
-    syncLogs: [...initialSyncLogs.map((log) => ({ ...log }))],
-    compensations: [],
-    inventoryEvents: [],
-  };
+  const next = createInitialStore();
+  store.tickets = [...next.tickets.map((ticket) => ({ ...ticket }))];
+  store.approvals = [...next.approvals.map((approval) => ({ ...approval }))];
+  store.scans = [...next.scans.map((scan) => ({ ...scan }))];
+  store.syncLogs = [...next.syncLogs.map((log) => ({ ...log }))];
+  store.compensations = [];
+  store.inventoryEvents = [];
+  globalThis.__v3MockStore = store;
 }
 
 export function hasRole(user: SessionUser, role: SessionUser["roles"][number]) {

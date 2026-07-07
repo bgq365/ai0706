@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createTicket, findOpenTicketByWaybillAndSubtype, listTickets } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import { fail, ok, okList } from "@/lib/response";
 import { requireSession } from "@/lib/server-auth";
 import { validateWaybill } from "@/lib/v2-client";
@@ -14,10 +14,11 @@ const createTicketSchema = z.object({
 });
 
 export async function GET(request: Request) {
+  const store = await getStore();
   const { searchParams } = new URL(request.url);
   const page = Number(searchParams.get("page") || "1");
   const perPage = Number(searchParams.get("per_page") || "20");
-  const records = listTickets();
+  const records = await store.listTickets();
   const start = (page - 1) * perPage;
   const end = start + perPage;
 
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const store = await getStore();
   const session = await requireSession();
   if (!session.user) {
     return session.response;
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
     return fail(403, "forbidden", "You cannot create tickets for another warehouse.");
   }
 
-  const duplicate = findOpenTicketByWaybillAndSubtype(
+  const duplicate = await store.findOpenTicketByWaybillAndSubtype(
     parsed.data.waybillNo,
     parsed.data.category,
     parsed.data.subtype,
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const ticket = createTicket({
+  const ticket = await store.createTicket({
     ...parsed.data,
     reporter: session.user,
     dataSource: validation.source,

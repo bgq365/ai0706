@@ -1,9 +1,14 @@
 import {
   approveTicket,
   createTicket,
+  disableDemoUser,
   findOpenQcTicketByWaybill,
+  findDemoUserById,
+  fastReleaseQcTicket,
   getSeedData,
   getTicket,
+  processApprovalTimeouts,
+  reassignDisabledApproverTickets,
   listApprovals,
   listCompensations,
   listInventoryEvents,
@@ -191,5 +196,71 @@ describe("mock-store rubric behaviors", () => {
     expect(Array.isArray(seed.syncLogs)).toBe(true);
     expect(Array.isArray(seed.compensations)).toBe(true);
     expect(Array.isArray(seed.inventoryEvents)).toBe(true);
+  });
+
+  it("escalates overdue level 1 approvals to level 2", () => {
+    const ticket = createTicket({
+      waybillNo: "WB20260706003",
+      title: "超时升级测试",
+      category: "logistics",
+      subtype: "超时升级-唯一",
+      amount: 200,
+      summary: "测试审批超时升级",
+      reporter,
+      dataSource: "snapshot",
+      snapshotSyncedAt: new Date().toISOString(),
+      dedupeOpenSameType: false,
+    });
+    submitTicket(ticket.id, reporter, "提交");
+
+    const current = getTicket(ticket.id)!;
+    current.dueAt = new Date(Date.now() - 60_000).toISOString();
+
+    const result = processApprovalTimeouts(new Date());
+
+    expect(result.escalatedToLevel2).toContain(ticket.id);
+    expect(getTicket(ticket.id)?.status).toBe("level2_reviewing");
+    expect(getTicket(ticket.id)?.currentApproverLevel).toBe(2);
+  });
+
+  it("auto closes overdue level 2 approvals", () => {
+    const current = getTicket("ticket-001")!;
+    current.dueAt = new Date(Date.now() - 60_000).toISOString();
+
+    const result = processApprovalTimeouts(new Date());
+
+    expect(result.autoClosed).toContain("ticket-001");
+    expect(getTicket("ticket-001")?.status).toBe("closed");
+  });
+
+  it("reassigns tickets from a disabled approver to a fallback approver", () => {
+    disableDemoUser("user-l1-01");
+    const outcome = reassignDisabledApproverTickets(
+      "user-l1-01",
+      "user-admin-01",
+      approverL2,
+      "一级审批人已禁用，转交管理员兜底处理。",
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(findDemoUserById("user-l1-01")?.isActive).toBe(false);
+    expect(getTicket("ticket-002")?.assignedApproverId).toBe("user-admin-01");
+    expect(listApprovals("ticket-002")[0]?.action).toBe("reassign");
+  });
+
+  it("allows qc supervisor fast release and unlocks held scans", () => {
+    const ticket = getTicket("ticket-001")!;
+    const result = fastReleaseQcTicket(
+      ticket.id,
+      approverL2,
+      "品控主管确认误判，快速放行。",
+      ticket.version,
+      "qc-fast-001",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(getTicket(ticket.id)?.status).toBe("completed");
+    expect(listApprovals(ticket.id)[0]?.action).toBe("fast_release");
+    expect(getSeedData().scans.find((scan) => scan.ticketId === ticket.id)?.holdStatus).toBe("released");
   });
 });

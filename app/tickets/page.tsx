@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { listTickets } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 
-export default function TicketsPage() {
-  const tickets = listTickets();
+export default async function TicketsPage() {
+  const store = await getStore();
+  const tickets = await store.listTickets();
 
   return (
     <main className="card">

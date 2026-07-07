@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getTicket, submitTicket } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import { fail, ok } from "@/lib/response";
 import { requireSession } from "@/lib/server-auth";
 
@@ -12,6 +12,7 @@ interface RouteProps {
 }
 
 export async function POST(request: Request, { params }: RouteProps) {
+  const store = await getStore();
   const session = await requireSession();
   if (!session.user) {
     return session.response;
@@ -23,7 +24,7 @@ export async function POST(request: Request, { params }: RouteProps) {
   }
 
   const { id } = await params;
-  const ticket = getTicket(id);
+  const ticket = await store.getTicket(id);
 
   if (!ticket) {
     return fail(404, "not_found", "Ticket not found.");
@@ -33,7 +34,7 @@ export async function POST(request: Request, { params }: RouteProps) {
     return fail(403, "forbidden", "Only the reporter or admin can submit this ticket.");
   }
 
-  const updated = submitTicket(id, session.user, parsed.data.comment);
+  const updated = await store.submitTicket(id, session.user, parsed.data.comment);
   if (!updated) {
     return fail(404, "not_found", "Ticket not found.");
   }

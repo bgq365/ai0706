@@ -61,8 +61,16 @@ create table if not exists exception_tickets (
   snapshot_synced_at timestamptz not null,
   current_approver_level integer,
   retry_count integer not null default 0,
+  reporter_name text not null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  version integer not null default 1,
+  execution_status text not null default 'not_started',
+  closed_at timestamptz,
+  assigned_approver_id uuid references users(id),
+  assigned_approver_name text,
+  due_at timestamptz,
+  timeout_escalation_count integer not null default 0
 );
 
 create table if not exists approval_records (
@@ -73,12 +81,14 @@ create table if not exists approval_records (
   actor_id uuid references users(id),
   actor_name text not null,
   comment text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  request_token text
 );
 
 create table if not exists compensation_records (
   id uuid primary key default gen_random_uuid(),
   ticket_id uuid not null references exception_tickets(id) on delete cascade,
+  approval_record_id uuid not null references approval_records(id) on delete cascade,
   amount numeric(12, 2) not null,
   direction text not null,
   status text not null,
@@ -89,6 +99,7 @@ create table if not exists compensation_records (
 create table if not exists inventory_events (
   id uuid primary key default gen_random_uuid(),
   ticket_id uuid not null references exception_tickets(id) on delete cascade,
+  approval_record_id uuid not null references approval_records(id) on delete cascade,
   event_type text not null,
   sku_code text,
   delta_qty integer,
@@ -106,6 +117,7 @@ create table if not exists scan_records (
   abnormal_reason text,
   hold_status text not null,
   ticket_id uuid references exception_tickets(id),
+  rule_id text,
   scanned_at timestamptz not null default now()
 );
 

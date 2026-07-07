@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createScan, createTicket, findOpenQcTicketByWaybill } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import { fail, ok } from "@/lib/response";
 import { validateSkuOwnership, validateWaybill } from "@/lib/v2-client";
 
@@ -12,6 +12,7 @@ const scanSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const store = await getStore();
   const parsed = scanSchema.safeParse(await request.json());
   if (!parsed.success) {
     return fail(422, "validation_error", "Scan payload is invalid.");
@@ -30,14 +31,14 @@ export async function POST(request: Request) {
   let ticket = null;
   if (parsed.data.result === "abnormal") {
     ticket =
-      findOpenQcTicketByWaybill(parsed.data.waybillNo) ??
-      createTicket({
+      (await store.findOpenQcTicketByWaybill(parsed.data.waybillNo)) ??
+      (await store.createTicket({
         waybillNo: parsed.data.waybillNo,
-        title: `${parsed.data.abnormalReason || "扫描异常"}待审批`,
+        title: `${parsed.data.abnormalReason || "Scan abnormal"} pending review`,
         category: "quality_control",
-        subtype: parsed.data.abnormalReason || "扫描异常",
+        subtype: parsed.data.abnormalReason || "Scan abnormal",
         amount: waybillValidation.waybill.amount,
-        summary: `扫描录入时触发异常：${parsed.data.abnormalReason || "未填写说明"}`,
+        summary: `Automatically created from scan exception: ${parsed.data.abnormalReason || "No reason provided"}`,
         reporter: {
           id: "system-scan",
           name: parsed.data.operatorName,
@@ -47,10 +48,10 @@ export async function POST(request: Request) {
         },
         dataSource: waybillValidation.source,
         snapshotSyncedAt: waybillValidation.waybill.syncedAt,
-      });
+      }));
   }
 
-  const record = createScan({
+  const record = await store.createScan({
     waybillNo: parsed.data.waybillNo,
     skuCode: parsed.data.skuCode,
     operatorName: parsed.data.operatorName,

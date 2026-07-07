@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
-import { env } from "@/lib/env";
+import { getJwtSecret, getSessionCookieSecureFlag } from "@/lib/env";
 import type { SessionUser } from "@/lib/types";
 
 const SESSION_COOKIE = "v3_session";
@@ -16,14 +16,14 @@ export function signSession(user: SessionUser) {
       sub: user.id,
       user,
     } satisfies SessionPayload,
-    env.jwtSecret,
+    getJwtSecret(),
     { expiresIn: "12h" },
   );
 }
 
 export function verifySession(token: string): SessionUser | null {
   try {
-    const payload = jwt.verify(token, env.jwtSecret) as SessionPayload;
+    const payload = jwt.verify(token, getJwtSecret()) as SessionPayload;
     return payload.user;
   } catch {
     return null;
@@ -44,7 +44,7 @@ export async function setSessionCookie(token: string) {
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: getSessionCookieSecureFlag(),
     path: "/",
     maxAge: 60 * 60 * 12,
   });
@@ -55,7 +55,7 @@ export async function clearSessionCookie() {
   cookieStore.set(SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: getSessionCookieSecureFlag(),
     path: "/",
     maxAge: 0,
   });

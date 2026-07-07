@@ -31,4 +31,22 @@ describe("server-auth", () => {
 
     expect(matched).toBe(true);
   });
+
+  it("returns the session when present", async () => {
+    vi.doMock("@/lib/auth", () => ({
+      getSessionUser: vi.fn(async () => ({
+        id: "u1",
+        name: "Tester",
+        email: "tester@test.local",
+        warehouseId: "wh-1",
+        roles: ["admin"],
+      })),
+    }));
+
+    const { requireSession } = await import("@/lib/server-auth");
+    const result = await requireSession();
+
+    expect(result.user?.id).toBe("u1");
+    expect(result.response).toBeNull();
+  });
 });

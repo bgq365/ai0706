@@ -1,5 +1,5 @@
 import { env } from "@/lib/env";
-import { appendSyncLog, findWaybill } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import type { WaybillSnapshot } from "@/lib/types";
 
 function createRequestId() {
@@ -22,6 +22,7 @@ export async function validateWaybill(waybillNo: string): Promise<{
   waybill: WaybillSnapshot | null;
 }> {
   const requestId = createRequestId();
+  const store = await getStore();
 
   if (env.enableV2Live && env.v2ApiBaseUrl && env.v2ApiToken) {
     const endpoint = `${env.v2ApiBaseUrl}/api/v1/waybills/${encodeURIComponent(waybillNo)}`;
@@ -34,7 +35,7 @@ export async function validateWaybill(waybillNo: string): Promise<{
         cache: "no-store",
       });
 
-      appendSyncLog({
+      await store.appendSyncLog({
         requestId,
         endpoint: `/api/v1/waybills/${waybillNo}`,
         method: "GET",
@@ -46,10 +47,13 @@ export async function validateWaybill(waybillNo: string): Promise<{
       });
 
       if (!response.ok) {
-        return { found: false, source: "snapshot", requestId, waybill: findWaybill(waybillNo) };
+        return { found: false, source: "snapshot", requestId, waybill: await store.findWaybill(waybillNo) };
       }
 
       const payload = (await response.json()) as { data?: WaybillSnapshot };
+      if (payload.data) {
+        await store.upsertWaybillSnapshot(payload.data);
+      }
       return {
         found: Boolean(payload.data),
         source: "v2-live",
@@ -57,7 +61,7 @@ export async function validateWaybill(waybillNo: string): Promise<{
         waybill: payload.data ?? null,
       };
     } catch (error) {
-      appendSyncLog({
+      await store.appendSyncLog({
         requestId,
         endpoint: `/api/v1/waybills/${waybillNo}`,
         method: "GET",
@@ -70,8 +74,8 @@ export async function validateWaybill(waybillNo: string): Promise<{
     }
   }
 
-  const waybill = findWaybill(waybillNo);
-  appendSyncLog({
+  const waybill = await store.findWaybill(waybillNo);
+  await store.appendSyncLog({
     requestId,
     endpoint: `/api/v1/waybills/${waybillNo}`,
     method: "GET",
@@ -92,9 +96,10 @@ export async function validateWaybill(waybillNo: string): Promise<{
 
 export async function validateSkuOwnership(skuCode: string, waybillNo: string) {
   const requestId = createRequestId();
-  const exists = Boolean(findWaybill(waybillNo));
+  const store = await getStore();
+  const exists = Boolean(await store.findWaybill(waybillNo));
 
-  appendSyncLog({
+  await store.appendSyncLog({
     requestId,
     endpoint: `/api/v1/skus/${skuCode}/ownership`,
     method: "GET",

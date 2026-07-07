@@ -15,6 +15,15 @@ vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => cookieStore),
 }));
 
+vi.mock("@/lib/env", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/env")>("@/lib/env");
+
+  return {
+    ...actual,
+    getSessionCookieSecureFlag: vi.fn(() => false),
+  };
+});
+
 describe("auth helpers", () => {
   const user: SessionUser = {
     id: "user-1",

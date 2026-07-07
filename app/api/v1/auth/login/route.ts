@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { setSessionCookie, signSession } from "@/lib/auth";
-import { findDemoUserByEmail } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 import { fail, ok } from "@/lib/response";
 
 const loginSchema = z.object({
@@ -9,6 +9,7 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const store = await getStore();
   const body = await request.json();
   const parsed = loginSchema.safeParse(body);
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
     ]);
   }
 
-  const user = findDemoUserByEmail(parsed.data.email);
+  const user = await store.findDemoUserByEmail(parsed.data.email);
   if (!user || user.password !== parsed.data.password) {
     return fail(401, "invalid_credentials", "Email or password is incorrect.");
   }

@@ -1,20 +1,21 @@
 import { notFound } from "next/navigation";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { findWaybill, getTicket, listApprovals } from "@/lib/mock-store";
+import { getStore } from "@/lib/data-store";
 
 interface TicketDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
 export default async function TicketDetailPage({ params }: TicketDetailPageProps) {
+  const store = await getStore();
   const { id } = await params;
-  const ticket = getTicket(id);
+  const ticket = await store.getTicket(id);
   if (!ticket) {
     notFound();
   }
 
-  const approvals = listApprovals(ticket.id);
-  const waybill = findWaybill(ticket.waybillNo);
+  const approvals = await store.listApprovals(ticket.id);
+  const waybill = await store.findWaybill(ticket.waybillNo);
 
   return (
     <main className="grid grid-2">
@@ -41,6 +42,14 @@ export default async function TicketDetailPage({ params }: TicketDetailPageProps
           <div className="item">
             <strong>上报人</strong>
             <div>{ticket.reporterName}</div>
+          </div>
+          <div className="item">
+            <strong>当前处理人</strong>
+            <div>{ticket.assignedApproverName ?? "未分配"}</div>
+          </div>
+          <div className="item">
+            <strong>审批截止时间</strong>
+            <div>{ticket.dueAt ? formatDateTime(ticket.dueAt) : "无"}</div>
           </div>
         </div>
         <div className="callout info" style={{ marginTop: 20 }}>
